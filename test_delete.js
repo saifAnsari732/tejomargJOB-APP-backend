@@ -1,0 +1,1 @@
+const { db } = require('./config/firebase'); db.collection('applications').where('jobId', '==', 'Su1pnI2A6sa7QbVX8L6E').where('candidateId', '==', '50iqX1m8IS5Uy3tWbsXU').get().then(s => { s.docs.forEach(d => d.ref.delete()); console.log('Deleted ' + s.size); process.exit(0); });
