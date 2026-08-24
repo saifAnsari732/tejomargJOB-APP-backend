@@ -17,20 +17,33 @@ const generateJobDescription = async (req, res) => {
       return res.status(503).json({ message: 'Gemini is not configured on the server' });
     }
 
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    const model = genAI.getGenerativeModel({ 
+      model: 'gemini-2.5-flash',
+      generationConfig: { responseMimeType: "application/json" }
+    });
 
     const prompt = `
       You are an expert technical recruiter and copywriter.
       Write a highly professional, engaging, and well-structured job description for a "${title}" in the "${category || 'General'}" category.
+      Also, provide a list of 5 to 10 relevant skills for this job.
       
-      The response must be plain text with clear headings, bullet points for responsibilities and requirements, and a welcoming tone.
-      Keep it under 300 words. Do NOT include placeholder brackets like [Company Name], just write a generic but excellent description.
+      You MUST respond in pure JSON format ONLY. Do not use markdown blocks. The JSON should have two keys:
+      "description" (string, keep it under 300 words, no placeholder brackets)
+      "skills" (array of strings)
     `;
 
     const result = await model.generateContent(prompt);
-    const responseText = result.response.text();
+    let responseText = result.response.text();
+    responseText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+    
+    let data;
+    try {
+      data = JSON.parse(responseText);
+    } catch(e) {
+      data = { description: responseText, skills: [] };
+    }
 
-    res.status(200).json({ description: responseText });
+    res.status(200).json(data);
   } catch (error) {
     console.error('Gemini Error (Job Description):', error);
     res.status(500).json({ message: error?.message || 'Failed to generate job description' });

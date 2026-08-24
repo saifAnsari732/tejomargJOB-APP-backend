@@ -71,7 +71,7 @@ const applyToJob = async (req, res) => {
     const jobSnap = await db.collection('jobs').doc(jobId).get();
     if (jobSnap.exists) {
       const employerId = jobSnap.data().employerId;
-      const candidateName = candidateDoc.data().name || 'A candidate';
+      const candidateName = candidateData.name || 'A candidate';
       await sendNotification(
         employerId, 
         'New Job Application! 🚀', 

@@ -113,21 +113,13 @@ const verifyOtp = async (req, res) => {
     let user;
 
     if (snapshot.empty) {
-      if (otp !== '123123' && otp !== '123456') {
-        return res.status(400).json({ message: 'Invalid OTP' });
-      }
-      // Create user if they don't exist (Mock OTP flow)
-      user = { phone, isVerified: true, createdAt: new Date() };
-      if (role) user.role = role;
-      if (req.body.name) user.name = req.body.name;
-      const docRef = await usersRef.add(user);
-      userId = docRef.id;
+      return res.status(400).json({ message: 'Invalid OTP' });
     } else {
       const userDoc = snapshot.docs[0];
       user = userDoc.data();
       userId = userDoc.id;
 
-      if (user.otp !== otp && otp !== '123123' && otp !== '123456') {
+      if (user.otp !== otp) {
         return res.status(400).json({ message: 'Invalid OTP' });
       }
     }
