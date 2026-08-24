@@ -2,6 +2,15 @@ const { db, FieldValue, adminAuth } = require('../config/firebase');
 const generateToken = require('../utils/generateToken');
 const cache = require('../utils/cache');
 
+const normalizePhone = (value) => {
+  const digits = String(value || '').replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.length === 10) return `+91${digits}`;
+  if (digits.length === 12 && digits.startsWith('91')) return `+${digits}`;
+  if (String(value || '').startsWith('+')) return `+${digits}`;
+  return `+${digits}`;
+};
+
 const enrichUserData = async (userId, user) => {
   const cacheKey = `user_enrich_${userId}`;
   const cachedData = cache.get(cacheKey);
@@ -168,7 +177,7 @@ const verifyOtp = async (req, res) => {
 // @route   POST /api/auth/verify-firebase-token
 // @access  Public
 const verifyFirebaseToken = async (req, res) => {
-  const { firebaseToken, role } = req.body;
+  const { firebaseToken, role, phone: expectedPhone } = req.body;
 
   if (!firebaseToken) {
     return res.status(400).json({ message: 'Please provide firebase token' });
@@ -176,10 +185,14 @@ const verifyFirebaseToken = async (req, res) => {
 
   try {
     const decodedToken = await adminAuth.verifyIdToken(firebaseToken);
-    const phone = decodedToken.phone_number;
+    const phone = normalizePhone(decodedToken.phone_number);
+    const normalizedExpectedPhone = normalizePhone(expectedPhone);
 
     if (!phone) {
       return res.status(400).json({ message: 'No phone number linked to this token' });
+    }
+    if (normalizedExpectedPhone && normalizedExpectedPhone !== phone) {
+      return res.status(401).json({ message: 'Verified phone number does not match the requested login number' });
     }
 
     const usersRef = db.collection('users');

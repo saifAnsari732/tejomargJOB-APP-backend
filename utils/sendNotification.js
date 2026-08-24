@@ -33,6 +33,12 @@ const sendNotification = async (userId, title, body, data = {}) => {
       return;
     }
 
+    // Role check to prevent mixed notifications if user switched roles
+    if (data.targetRole && user.role !== data.targetRole) {
+      console.log(`Skipping notification for ${userId}: target role is ${data.targetRole} but user is ${user.role}`);
+      return;
+    }
+
     if (!Expo.isExpoPushToken(user.pushToken)) {
       console.error(`Push token ${user.pushToken} is not a valid Expo push token`);
       return;

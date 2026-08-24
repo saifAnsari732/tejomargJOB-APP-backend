@@ -21,7 +21,7 @@ const initCronJobs = () => {
             doc.id,
             'Complete Your Profile!',
             'Complete your profile to 100% to get 3x more job offers from top companies.',
-            { type: 'reminder', action: 'profile' }
+            { type: 'reminder', action: 'profile', targetRole: 'candidate' }
           );
         }
       }
@@ -62,7 +62,7 @@ const initCronJobs = () => {
           empId,
           'Pending Applications Waiting!',
           'You have pending candidate applications. Review them before top talent gets hired elsewhere!',
-          { type: 'reminder', action: 'applications' }
+          { type: 'reminder', action: 'applications', targetRole: 'employer' }
         );
       }
     } catch (error) {
@@ -82,7 +82,7 @@ const initCronJobs = () => {
           doc.id,
           'New Jobs Waiting for You! 🚀',
           'Check out the latest job openings matching your skills on Tejomarg.',
-          { type: 'reminder', action: 'jobs' }
+          { type: 'reminder', action: 'jobs', targetRole: 'candidate' }
         );
       }
     } catch (error) {
