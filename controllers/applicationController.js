@@ -20,13 +20,21 @@ const applyToJob = async (req, res) => {
       return res.status(400).json({ message: 'Please create your profile first to apply for jobs.' });
     }
 
-    const candidateData = { ...(userDoc.exists ? userDoc.data() : {}), ...webProfile, ...(candidateDoc.exists ? candidateDoc.data() : {}) };
-    if (!candidateData.name || !candidateData.resumeUrl || (candidateData.profileCompletionPercent && candidateData.profileCompletionPercent < 50)) {
-      return res.status(400).json({ message: 'Please complete your profile (Name, Resume required) before applying.' });
+    const candidateData = { 
+      ...(userDoc.exists ? userDoc.data() : {}), 
+      ...webProfile, 
+      ...(candidateDoc.exists ? candidateDoc.data() : {}),
+      ...(req.body.candidateProfile || {})
+    };
+
+    if (!candidateData.name && !userDoc.exists?.name) {
+      return res.status(400).json({ message: 'Candidate name is required to apply.' });
     }
 
     // Ensure we fetch the user's phone number to send to the employer
-    const candidatePhone = userDoc.exists ? userDoc.data().phone : '';
+    const candidatePhone = candidateData.phone || candidateData.mobile || (userDoc.exists ? userDoc.data().phone : '') || '';
+    const candidateEmail = candidateData.email || (userDoc.exists ? userDoc.data().email : '') || '';
+    const resumeUrl = req.body.resumeUrl || candidateData.resumeUrl || '';
 
     // Check if already applied
     const applicationsRef = db.collection('applications');
@@ -42,21 +50,25 @@ const applyToJob = async (req, res) => {
     const applicationData = {
       jobId,
       candidateId: userId,
-      resumeUrl: candidateData.resumeUrl || '',
+      resumeUrl: resumeUrl,
       coverLetter: coverLetter || coverNote || '',
       coverNote: coverLetter || coverNote || '',
       candidateName: candidateData.name || '',
-      candidatePhone: candidatePhone || '',
-      candidateEmail: userDoc.exists ? (userDoc.data().email || '') : '',
+      candidatePhone: candidatePhone,
+      candidateEmail: candidateEmail,
       candidateProfile: {
-        name: candidateData.name || '', email: userDoc.exists ? userDoc.data().email || '' : '',
-        phone: candidatePhone || candidateData.mobile || '', mobile: candidateData.mobile || candidatePhone || '',
-        headline: candidateData.headline || '', skills: candidateData.skills || [],
-        experience: candidateData.experience || candidateData.workExperience || [],
-        education: candidateData.education || [], certifications: candidateData.certifications || [],
-        languages: candidateData.languages || [], currentCity: candidateData.currentCity || candidateData.preferredLocation || '',
-        homeTown: candidateData.homeTown || '', dob: candidateData.dob || '', gender: candidateData.gender || '',
-        resumeUrl: candidateData.resumeUrl || '', photoUrl: candidateData.photoUrl || candidateData.avatarUrl || '',
+        name: candidateData.name || '',
+        email: candidateEmail,
+        phone: candidatePhone,
+        mobile: candidatePhone,
+        currentCity: candidateData.currentCity || candidateData.preferredLocation || candidateData.location || '',
+        totalExperience: candidateData.totalExperience || candidateData.experience || '',
+        highestEducation: candidateData.highestEducation || candidateData.education || '',
+        skills: candidateData.skills || [],
+        experience: candidateData.experience || [],
+        education: candidateData.education || [],
+        resumeUrl: resumeUrl,
+        photoUrl: candidateData.photoUrl || candidateData.avatarUrl || '',
       },
       screeningAnswers: screeningAnswers || [],
       status: 'applied',
@@ -170,37 +182,51 @@ const getJobApplications = async (req, res) => {
       const app = { _id: doc.id, ...doc.data() };
       
       // Populate candidate
+      const candProfileData = app.candidateProfile || {};
+      let userData = {};
+      let candDocData = {};
+
       if (app.candidateId) {
-        const userSnap = await db.collection('users').doc(app.candidateId).get();
-        const candProfileSnap = await db.collection('candidateProfiles').doc(app.candidateId).get();
-        
-        if (userSnap.exists) {
-          const userData = userSnap.data();
-          const candProfile = candProfileSnap.exists ? candProfileSnap.data() : {};
-          const webProfile = userData.candidateProfile || {};
-          
-          app.candidateId = { 
-            _id: app.candidateId, 
-            name: app.candidateName || userData.name || candProfile.name || webProfile.name || 'Candidate',
-            email: userData.email,
-            phone: app.candidatePhone || userData.phone,
-            skills: app.candidateProfile?.skills || candProfile.skills || webProfile.skills || [],
-            expectedSalary: candProfile.expectedSalary || webProfile.expectedSalary 
-              ? `₹${candProfile.expectedSalary || webProfile.expectedSalary}/yr` : 'Not specified',
-            resume: app.resumeUrl || candProfile.resumeUrl || webProfile.resumeUrl || null,
-            city: app.candidateProfile?.currentCity || candProfile.currentCity || webProfile.preferredLocation || candProfile.preferredLocation || 'Location Not Provided',
-            profile: app.candidateProfile || { ...candProfile, ...webProfile },
-            userId: { email: userData.email, phone: userData.phone }
-          };
-        } else {
-           app.candidateId = { _id: app.candidateId, name: app.candidateName || 'Candidate' };
+        try {
+          const userSnap = await db.collection('users').doc(app.candidateId).get();
+          if (userSnap.exists) userData = userSnap.data();
+          const candProfileSnap = await db.collection('candidateProfiles').doc(app.candidateId).get();
+          if (candProfileSnap.exists) candDocData = candProfileSnap.data();
+        } catch (fetchErr) {
+          console.log('Error fetching candidate doc:', fetchErr);
         }
       }
+
+      const webProfile = userData.candidateProfile || {};
+      const mergedProfile = { ...candDocData, ...webProfile, ...candProfileData };
+
+      app.candidateName = app.candidateName || mergedProfile.name || userData.name || 'Candidate';
+      app.candidatePhone = app.candidatePhone || mergedProfile.phone || mergedProfile.mobile || userData.phone || '';
+      app.candidateEmail = app.candidateEmail || mergedProfile.email || userData.email || '';
+      app.resumeUrl = app.resumeUrl || mergedProfile.resumeUrl || '';
+      app.candidateProfile = mergedProfile;
+
+      app.candidateId = {
+        _id: app.candidateId || doc.id,
+        name: app.candidateName,
+        email: app.candidateEmail,
+        phone: app.candidatePhone,
+        mobile: app.candidatePhone,
+        skills: mergedProfile.skills || [],
+        totalExperience: mergedProfile.totalExperience || mergedProfile.experience || 'Fresher',
+        highestEducation: mergedProfile.highestEducation || mergedProfile.education || '',
+        city: mergedProfile.currentCity || mergedProfile.preferredLocation || 'Location Not Provided',
+        resume: app.resumeUrl,
+        resumeUrl: app.resumeUrl,
+        coverLetter: app.coverLetter || app.coverNote || '',
+        profile: mergedProfile,
+        userId: { email: app.candidateEmail, phone: app.candidatePhone }
+      };
       
       applications.push(app);
     }
 
-    applications.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    applications.sort((a, b) => new Date(b.createdAt || b.appliedAt || 0) - new Date(a.createdAt || a.appliedAt || 0));
     res.status(200).json(applications);
   } catch (error) {
     console.error(error);

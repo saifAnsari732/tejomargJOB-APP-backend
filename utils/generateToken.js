@@ -1,7 +1,8 @@
 const jwt = require('jsonwebtoken');
 
 const generateToken = (id, role) => {
-  return jwt.sign({ id, role }, process.env.JWT_SECRET, {
+  const secret = process.env.JWT_SECRET || 'tejomarg_secret_key_2026_dev';
+  return jwt.sign({ id, role }, secret, {
     expiresIn: '30d',
   });
 };

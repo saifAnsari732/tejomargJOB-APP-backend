@@ -1,21 +1,21 @@
 const { db } = require('../config/firebase');
 const axios = require('axios');
 
-// Normalizer for Remotive
-function normalizeRemotiveJob(j) {
+// Normalizer for Jobicy
+function normalizeJobicyJob(j) {
   return {
     id: String(j.id),
-    title: j.title,
-    company: j.company_name,
-    companyLogo: j.company_logo || null,
-    location: j.candidate_required_location || "Remote",
-    type: "FULLTIME",
+    title: j.jobTitle,
+    company: j.companyName,
+    companyLogo: j.companyLogo || null,
+    location: j.jobGeo || "Remote",
+    type: (j.jobType && j.jobType[0]) ? j.jobType[0] : "FULLTIME",
     isRemote: true,
-    salary: j.salary || "Not Disclosed",
-    description: (j.description || "").replace(/<[^>]+>/g, '').slice(0, 300) + "…",
+    salary: j.annualSalaryMax ? `$${j.annualSalaryMin} - $${j.annualSalaryMax}` : "Not Disclosed",
+    description: (j.jobDescription || "").replace(/<[^>]+>/g, '').slice(0, 300) + "…",
     applyUrl: j.url,
-    postedAt: j.publication_date || null,
-    source: "Remotive",
+    postedAt: j.pubDate || null,
+    source: "External",
   };
 }
 
@@ -24,7 +24,7 @@ function getMockJobs(query, location) {
   return [
     {
       id: "mock-1",
-      title: `${query} – Senior Role`,
+      title: `${query || 'Software Engineer'} – Senior Role`,
       company: "Infosys Ltd",
       companyLogo: null,
       location: `Bangalore, ${location}`,
@@ -35,41 +35,37 @@ function getMockJobs(query, location) {
       applyUrl: "https://www.infosys.com/careers",
       postedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
       source: "Mock Data",
-    },
-    {
-      id: "mock-3",
-      title: `Remote ${query}`,
-      company: "Razorpay",
-      companyLogo: null,
-      location: "Remote, India",
-      type: "FULLTIME",
-      isRemote: true,
-      salary: "INR 20,00,000 – 30,00,000 / year",
-      description: "Join India's leading fintech startup. Work fully remote and build financial infrastructure used by millions of businesses across India.",
-      applyUrl: "https://razorpay.com/jobs",
-      postedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-      source: "Mock Data",
     }
   ];
 }
 
-// @desc    Get live jobs from Remotive API (with Firestore caching)
+// @desc    Get live jobs from External API (with Firestore caching)
 // @route   GET /api/jobs/live
 // @access  Public / Candidate
 const getLiveJobs = async (req, res) => {
-  const query = req.query.query || "Software Developer";
+  const query = req.query.query || "";
   const location = req.query.location || "India";
 
   try {
-    const response = await axios.get(`https://remotive.com/api/remote-jobs?search=${encodeURIComponent(query)}&limit=100`);
-    const raw = response.data;
+    // Jobicy returns up to 50 jobs per request by default. We can request count=50
+    const url = 'https://jobicy.com/api/v2/remote-jobs?count=50';
+    const response = await axios.get(url);
     
-    let jobs = (raw.jobs || []).map(normalizeRemotiveJob);
+    let jobs = (response.data.jobs || []).map(normalizeJobicyJob);
+
+    // Filter by query if provided
+    if (query && query.toLowerCase() !== 'developer') {
+      const q = query.toLowerCase();
+      jobs = jobs.filter(j => 
+        (j.title && j.title.toLowerCase().includes(q)) || 
+        (j.description && j.description.toLowerCase().includes(q))
+      );
+    }
 
     // Sync to Firestore asynchronously
     Promise.all(jobs.map(async (job) => {
       try {
-        const docId = `ext_remotive_${job.id}`;
+        const docId = `ext_jobicy_${job.id}`;
         const expiresAt = new Date();
         expiresAt.setDate(expiresAt.getDate() + 60);
 
@@ -103,10 +99,10 @@ const getLiveJobs = async (req, res) => {
       jobs: jobs.length > 0 ? jobs : getMockJobs(query, location),
     });
   } catch (err) {
-    console.error("Remotive fetch error:", err.message);
+    console.error("External fetch error:", err.message);
     res.status(200).json({
       status: "mock",
-      total: 2,
+      total: 1,
       jobs: getMockJobs(query, location),
     });
   }

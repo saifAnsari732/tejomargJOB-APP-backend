@@ -127,6 +127,20 @@ const getJobById = async (req, res) => {
       const empSnap = await db.collection('companies').where('employerId', '==', job.employerId).limit(1).get();
       if (!empSnap.empty) {
         job.employerId = { _id: empSnap.docs[0].id, ...empSnap.docs[0].data() };
+      } else {
+        const userDoc = await db.collection('users').doc(job.employerId).get();
+        if (userDoc.exists) {
+          const u = userDoc.data();
+          job.employerId = {
+            _id: userDoc.id,
+            name: u.name || '',
+            employerName: u.name || '',
+            contactNumber: u.phone || u.contactNumber || '',
+            phone: u.phone || '',
+            email: u.email || '',
+            companyName: u.companyName || u.name || ''
+          };
+        }
       }
     }
 

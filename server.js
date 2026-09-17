@@ -25,15 +25,32 @@ const uploadRoutes = require('./routes/uploadRoutes');
 const app = express(); 
 const server = http.createServer(app);
  
+const ALLOWED_ORIGINS = [
+  'https://tejomargjob-app-backend.onrender.com',
+  'http://localhost:8081',
+  'http://localhost:19006',
+  /^exp:\/\//,
+];
+
 const io = new Server(server, {
   cors: {
-    origin: '*', // For dev, allow all
+    origin: ALLOWED_ORIGINS,
     methods: ['GET', 'POST'],
   },
 }); 
   
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow mobile apps (no origin) and whitelisted web origins
+    if (!origin || ALLOWED_ORIGINS.some(o => typeof o === 'string' ? o === origin : o.test(origin))) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 

@@ -73,6 +73,15 @@ const getProfile = async (req, res) => {
            employerName: userDoc.data().name || ''
         });
       }
+      // In dev mode, return mock profile so dashboard renders
+      if (req.isDevMode) {
+        return res.status(200).json({
+          name: req.user.name || 'Dev Company',
+          phone: req.user.phone || '',
+          role: 'employer',
+          isVerified: false,
+        });
+      }
       return res.status(404).json({ message: 'Profile not found' });
     }
 
@@ -80,6 +89,14 @@ const getProfile = async (req, res) => {
     res.status(200).json({ _id: doc.id, ...doc.data() });
   } catch (error) {
     console.error("Get Profile Error:", error);
+    if (req.isDevMode) {
+      return res.status(200).json({
+        name: req.user?.name || 'Dev Company',
+        phone: req.user?.phone || '',
+        role: 'employer',
+        isVerified: false,
+      });
+    }
     res.status(500).json({ message: 'Server error' });
   }
 };
