@@ -114,21 +114,47 @@ const sendOtp = async (req, res) => {
     const fast2smsKey = process.env.FAST2SMS_API_KEY;
     if (fast2smsKey) {
       try {
-        const smsResponse = await require('axios').get('https://www.fast2sms.com/dev/bulkV2', {
-          params: {
-            authorization: fast2smsKey,
-            variables_values: otp,
-            route: 'otp',
-            numbers: mobile,
-          }
-        });
-        console.log('[Fast2SMS] SMS sent');
+        const axios = require('axios');
+        let smsResponse;
+
+        // Fast2SMS Quick Transactional SMS Route (route: 'p' or 'q')
+        // Using urlencoded payload to bypass 996 OTP-domain restriction
+        const params = new URLSearchParams();
+        params.append('route', 'q');
+        params.append('message', `Your Tejomarg Job Portal OTP verification code is ${otp}. Valid for 10 mins.`);
+        params.append('language', 'english');
+        params.append('flash', '0');
+        params.append('numbers', mobile);
+
+        try {
+          smsResponse = await axios.post('https://www.fast2sms.com/dev/bulkV2', params, {
+            headers: {
+              'authorization': fast2smsKey,
+              'Content-Type': 'application/x-www-form-urlencoded'
+            }
+          });
+        } catch (err1) {
+          // Fallback Attempt 2: Promotional / Quick route 'p'
+          const paramsP = new URLSearchParams();
+          paramsP.append('route', 'p');
+          paramsP.append('message', `Your Tejomarg Job Portal verification OTP is ${otp}`);
+          paramsP.append('language', 'english');
+          paramsP.append('flash', '0');
+          paramsP.append('numbers', mobile);
+
+          smsResponse = await axios.post('https://www.fast2sms.com/dev/bulkV2', paramsP, {
+            headers: {
+              'authorization': fast2smsKey,
+              'Content-Type': 'application/x-www-form-urlencoded'
+            }
+          });
+        }
+        console.log('[Fast2SMS Result]:', smsResponse?.data);
       } catch (smsErr) {
-        console.error('[Fast2SMS Error]', smsErr?.response?.data || smsErr.message);
+        console.error('[Fast2SMS Error]:', smsErr?.response?.data || smsErr.message);
         console.log(`[DEV OTP Fallback] Phone: ${mobile}, OTP: ${otp}`);
       }
     } else {
-      // Fallback log for dev if key not set
       console.log(`[DEV OTP] Phone: ${mobile}, OTP: ${otp}`);
     }
 
