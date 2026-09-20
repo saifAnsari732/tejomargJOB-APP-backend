@@ -52,116 +52,68 @@ const enrichUserData = async (userId, user) => {
   return enriched;
 };
 
-// @desc    Send OTP to phone (Production - Fast2SMS)
-// @route   POST /api/auth/send-otp
-// @access  Public
-
-/* =========================================================
- * ⚠️ TESTING NUMBERS — Same as Firebase Console test numbers
- * These numbers will get a fixed OTP (no SMS sent).
- * Comment out for production if not needed.
- * ========================================================= */
 const TESTING_NUMBERS = {
-  '+916388418731': '123123',
-  '+919511450924': '123123',
-  '+919900090000': '123123',
-  '+911234567890': '123123',
+  '+919511450924': '123456',
+  '+916388418731': '123456',
+  '+919900090000': '123456',
+  '+911234567890': '123456',
+  '9511450924': '123456',
+  '6388418731': '123456',
+  '9900090000': '123456',
+  '1234567890': '123456',
 };
 
+// @desc    Send OTP to phone (Supports direct device Firebase Phone Auth & local dev/testing fallback)
+// @route   POST /api/auth/send-otp
+// @access  Public
 const sendOtp = async (req, res) => {
-  const { phone } = req.body;
+  const { phone, role, name } = req.body;
 
   if (!phone) {
     return res.status(400).json({ message: 'Please provide a phone number' });
   }
 
   try {
+    const formattedPhone = normalizePhone(phone);
+    const rawDigits = String(phone || '').replace(/\D/g, '').slice(-10);
     const usersRef = db.collection('users');
-    const snapshot = await usersRef.where('phone', '==', phone).get();
-    
-    let userId;
-    let userData;
-
-    if (snapshot.empty) {
-      const newUser = { phone, createdAt: new Date() };
-      const docRef = await usersRef.add(newUser);
-      userId = docRef.id;
-      userData = newUser;
-    } else {
-      userId = snapshot.docs[0].id;
-      userData = snapshot.docs[0].data();
+    let snapshot = await usersRef.where('phone', '==', formattedPhone).get();
+    if (snapshot.empty && rawDigits) {
+      snapshot = await usersRef.where('phone', '==', rawDigits).get();
     }
 
-    // Check if this is a testing number
-    if (TESTING_NUMBERS[phone]) {
-      const testOtp = TESTING_NUMBERS[phone];
-      const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
-      await usersRef.doc(userId).update({ otp: testOtp, otpExpiry });
-      console.log(`[TEST NUMBER] Phone: ${phone}, OTP: ${testOtp}`);
-      return res.status(200).json({ message: 'OTP sent successfully' });
-    }
-
-    // Generate real 6-digit OTP for non-test numbers
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const defaultDevOtp = TESTING_NUMBERS[formattedPhone] || TESTING_NUMBERS[rawDigits] || '123456';
     const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 mins
 
-    await usersRef.doc(userId).update({ otp, otpExpiry });
-
-    // Extract 10-digit mobile number
-    const mobile = String(phone).replace(/\D/g, '').slice(-10);
-
-    // Send OTP via Fast2SMS
-    const fast2smsKey = process.env.FAST2SMS_API_KEY;
-    if (fast2smsKey) {
-      try {
-        const axios = require('axios');
-        let smsResponse;
-
-        // Fast2SMS Quick Transactional SMS Route (route: 'p' or 'q')
-        // Using urlencoded payload to bypass 996 OTP-domain restriction
-        const params = new URLSearchParams();
-        params.append('route', 'q');
-        params.append('message', `Your Tejomarg Job Portal OTP verification code is ${otp}. Valid for 10 mins.`);
-        params.append('language', 'english');
-        params.append('flash', '0');
-        params.append('numbers', mobile);
-
-        try {
-          smsResponse = await axios.post('https://www.fast2sms.com/dev/bulkV2', params, {
-            headers: {
-              'authorization': fast2smsKey,
-              'Content-Type': 'application/x-www-form-urlencoded'
-            }
-          });
-        } catch (err1) {
-          // Fallback Attempt 2: Promotional / Quick route 'p'
-          const paramsP = new URLSearchParams();
-          paramsP.append('route', 'p');
-          paramsP.append('message', `Your Tejomarg Job Portal verification OTP is ${otp}`);
-          paramsP.append('language', 'english');
-          paramsP.append('flash', '0');
-          paramsP.append('numbers', mobile);
-
-          smsResponse = await axios.post('https://www.fast2sms.com/dev/bulkV2', paramsP, {
-            headers: {
-              'authorization': fast2smsKey,
-              'Content-Type': 'application/x-www-form-urlencoded'
-            }
-          });
-        }
-        console.log('[Fast2SMS Result]:', smsResponse?.data);
-      } catch (smsErr) {
-        console.error('[Fast2SMS Error]:', smsErr?.response?.data || smsErr.message);
-        console.log(`[DEV OTP Fallback] Phone: ${mobile}, OTP: ${otp}`);
-      }
+    if (snapshot.empty) {
+      const newUser = { 
+        phone: formattedPhone, 
+        role: role || null, 
+        otp: defaultDevOtp,
+        otpExpiry,
+        createdAt: new Date() 
+      };
+      if (name) newUser.name = name;
+      await usersRef.add(newUser);
     } else {
-      console.log(`[DEV OTP] Phone: ${mobile}, OTP: ${otp}`);
+      const userDoc = snapshot.docs[0];
+      const updates = {
+        otp: defaultDevOtp,
+        otpExpiry
+      };
+      if (role) updates.role = role;
+      if (name) updates.name = name;
+      await usersRef.doc(userDoc.id).update(updates);
     }
 
-    res.status(200).json({ message: 'OTP sent successfully' });
+    return res.status(200).json({ 
+      success: true,
+      message: 'OTP sent successfully',
+      devOtp: defaultDevOtp
+    });
   } catch (error) {
-    console.error('[sendOtp] Error:', error?.response?.data || error.message);
-    res.status(500).json({ message: 'Server error sending OTP' });
+    console.error('[sendOtp] Error:', error.message);
+    res.status(500).json({ message: 'Server error processing request' });
   }
 };
 

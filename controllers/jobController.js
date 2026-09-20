@@ -59,7 +59,11 @@ const getJobs = async (req, res) => {
     if (city) jobsRef = jobsRef.where('location', '==', city); // Note: Simple match for now
     if (type) jobsRef = jobsRef.where('jobType', '==', type);
 
-    const snapshot = await jobsRef.get();
+    let snapshot = await jobsRef.get();
+    if (snapshot.empty && !category && !city && !type) {
+      // Fallback query in case jobs status field varies
+      snapshot = await db.collection('jobs').limit(50).get();
+    }
     let jobs = [];
     
     // Fetch employers for population

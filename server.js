@@ -27,8 +27,13 @@ const server = http.createServer(app);
  
 const ALLOWED_ORIGINS = [
   'https://tejomargjob-app-backend.onrender.com',
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'http://127.0.0.1:3000',
+  'http://127.0.0.1:3001',
   'http://localhost:8081',
   'http://localhost:19006',
+  /\.vercel\.app$/,
   /^exp:\/\//,
 ];
 
@@ -68,7 +73,7 @@ app.use('/api/payment', paymentRoutes);
 app.use('/api/coupons', couponRoutes);
 app.use('/api/upload', uploadRoutes);
 
-app.get('/', (req, res) => {
+app.get('/api/health', (req, res) => {
   res.send('JobConnect API is running...');
 });
 

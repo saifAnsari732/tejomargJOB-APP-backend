@@ -18,7 +18,6 @@
     "dotenv": "^17.4.2",
     "expo-server-sdk": "^7.1.0",
     "express": "^5.2.1",
-    "fast2sms": "^1.0.3",
     "firebase-admin": "^14.2.0",
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.2.0",
