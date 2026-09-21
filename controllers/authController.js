@@ -57,13 +57,48 @@ const TESTING_NUMBERS = {
   '+916388418731': '123456',
   '+919900090000': '123456',
   '+911234567890': '123456',
+  '+919876543210': '123456',
+  '+919999999999': '123456',
   '9511450924': '123456',
   '6388418731': '123456',
   '9900090000': '123456',
   '1234567890': '123456',
 };
 
-// @desc    Send OTP to phone (Supports direct device Firebase Phone Auth & local dev/testing fallback)
+const axios = require('axios');
+
+const sendSmsViaGateway = async (formattedPhone, otp) => {
+  const rawDigits = String(formattedPhone || '').replace(/\D/g, '').slice(-10);
+  const fast2smsKey = process.env.FAST2SMS_API_KEY;
+
+  if (fast2smsKey) {
+    try {
+      const response = await axios.post(
+        'https://www.fast2sms.com/dev/bulkV2',
+        {
+          variables_values: otp,
+          route: 'otp',
+          numbers: rawDigits,
+        },
+        {
+          headers: {
+            authorization: fast2smsKey,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+      console.log(`[Fast2SMS] Real SMS sent to ${rawDigits}:`, response.data?.message || 'Success');
+      return true;
+    } catch (err) {
+      console.error('[Fast2SMS Error]:', err?.response?.data || err?.message);
+    }
+  } else {
+    console.log(`[SMS Gateway] FAST2SMS_API_KEY not set in .env. OTP for ${formattedPhone}: ${otp}`);
+  }
+  return false;
+};
+
+// @desc    Send OTP to phone
 // @route   POST /api/auth/send-otp
 // @access  Public
 const sendOtp = async (req, res) => {
@@ -76,20 +111,29 @@ const sendOtp = async (req, res) => {
   try {
     const formattedPhone = normalizePhone(phone);
     const rawDigits = String(phone || '').replace(/\D/g, '').slice(-10);
+
+    if (rawDigits.length !== 10) {
+      return res.status(400).json({ message: 'Please enter a valid 10-digit phone number' });
+    }
+
     const usersRef = db.collection('users');
     let snapshot = await usersRef.where('phone', '==', formattedPhone).get();
     if (snapshot.empty && rawDigits) {
       snapshot = await usersRef.where('phone', '==', rawDigits).get();
     }
 
-    const defaultDevOtp = TESTING_NUMBERS[formattedPhone] || TESTING_NUMBERS[rawDigits] || '123456';
+    const isExplicitTestNumber = Boolean(TESTING_NUMBERS[formattedPhone] || TESTING_NUMBERS[rawDigits]);
+    const generatedOtp = isExplicitTestNumber
+      ? '123456'
+      : Math.floor(100000 + Math.random() * 900000).toString();
+
     const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 mins
 
     if (snapshot.empty) {
       const newUser = { 
         phone: formattedPhone, 
         role: role || null, 
-        otp: defaultDevOtp,
+        otp: generatedOtp,
         otpExpiry,
         createdAt: new Date() 
       };
@@ -98,7 +142,7 @@ const sendOtp = async (req, res) => {
     } else {
       const userDoc = snapshot.docs[0];
       const updates = {
-        otp: defaultDevOtp,
+        otp: generatedOtp,
         otpExpiry
       };
       if (role) updates.role = role;
@@ -106,10 +150,15 @@ const sendOtp = async (req, res) => {
       await usersRef.doc(userDoc.id).update(updates);
     }
 
+    console.log(`[sendOtp] OTP generated for ${formattedPhone}: ${generatedOtp} (Test Number: ${isExplicitTestNumber})`);
+    if (!isExplicitTestNumber) {
+      await sendSmsViaGateway(formattedPhone, generatedOtp);
+    }
+
     return res.status(200).json({ 
       success: true,
       message: 'OTP sent successfully',
-      devOtp: defaultDevOtp
+      devOtp: isExplicitTestNumber ? generatedOtp : undefined
     });
   } catch (error) {
     console.error('[sendOtp] Error:', error.message);
@@ -137,21 +186,14 @@ const verifyOtp = async (req, res) => {
       snapshot = await usersRef.where('phone', '==', rawDigits).get();
     }
 
-    const universalTestOtps = ['123123', '123456', '111111', '000000', '999999', '666666', '888888'];
-    const isTestOtp = universalTestOtps.includes(String(otp).trim());
-    const isTestNumber = isTestOtp || 
-      TESTING_NUMBERS[formattedPhone] || 
-      TESTING_NUMBERS[rawDigits] || 
-      rawDigits.includes('6388418731') || 
-      rawDigits.includes('9511450924') || 
-      rawDigits.includes('9900090000') || 
-      rawDigits.includes('1234567890');
+    const isExplicitTestNumber = Boolean(TESTING_NUMBERS[formattedPhone] || TESTING_NUMBERS[rawDigits]);
+    const isTestNumberMatch = isExplicitTestNumber && (String(otp).trim() === '123456' || String(otp).trim() === '123123');
 
     let userId;
     let user;
 
     if (snapshot.empty) {
-      if (!isTestNumber) {
+      if (!isTestNumberMatch) {
         return res.status(400).json({ message: 'No OTP request found for this number. Please request a new OTP.' });
       }
       const newUser = { phone: formattedPhone, role: role || null, isVerified: true, createdAt: new Date() };
@@ -164,10 +206,10 @@ const verifyOtp = async (req, res) => {
       user = userDoc.data();
       userId = userDoc.id;
 
-      // Verify OTP for production / non-test numbers
-      if (!isTestNumber) {
+      // Strict OTP Verification for ALL non-whitelisted numbers
+      if (!isTestNumberMatch) {
         if (!user.otp || String(user.otp).trim() !== String(otp).trim()) {
-          return res.status(400).json({ message: 'Invalid OTP. Please enter the correct code.' });
+          return res.status(400).json({ message: 'Invalid OTP. Please enter the correct 6-digit code.' });
         }
         if (user.otpExpiry) {
           const expiryDate = user.otpExpiry.toDate ? user.otpExpiry.toDate() : new Date(user.otpExpiry);
