@@ -67,38 +67,7 @@ const TESTING_NUMBERS = {
 
 const axios = require('axios');
 
-const sendSmsViaGateway = async (formattedPhone, otp) => {
-  const rawDigits = String(formattedPhone || '').replace(/\D/g, '').slice(-10);
-  const fast2smsKey = process.env.FAST2SMS_API_KEY;
-
-  if (fast2smsKey) {
-    try {
-      const response = await axios.post(
-        'https://www.fast2sms.com/dev/bulkV2',
-        {
-          variables_values: otp,
-          route: 'otp',
-          numbers: rawDigits,
-        },
-        {
-          headers: {
-            authorization: fast2smsKey,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
-      console.log(`[Fast2SMS] Real SMS sent to ${rawDigits}:`, response.data?.message || 'Success');
-      return true;
-    } catch (err) {
-      console.error('[Fast2SMS Error]:', err?.response?.data || err?.message);
-    }
-  } else {
-    console.log(`[SMS Gateway] FAST2SMS_API_KEY not set in .env. OTP for ${formattedPhone}: ${otp}`);
-  }
-  return false;
-};
-
-// @desc    Send OTP to phone
+// @desc    Send OTP to phone (Dev & Test Numbers Only - Pure Firebase used for production)
 // @route   POST /api/auth/send-otp
 // @access  Public
 const sendOtp = async (req, res) => {
@@ -150,10 +119,7 @@ const sendOtp = async (req, res) => {
       await usersRef.doc(userDoc.id).update(updates);
     }
 
-    console.log(`[sendOtp] OTP generated for ${formattedPhone}: ${generatedOtp} (Test Number: ${isExplicitTestNumber})`);
-    if (!isExplicitTestNumber) {
-      await sendSmsViaGateway(formattedPhone, generatedOtp);
-    }
+    console.log(`[sendOtp - Pure Firebase Mode] Session ready for ${formattedPhone}: ${isExplicitTestNumber ? 'Test Number' : 'Dev OTP'}`);
 
     return res.status(200).json({ 
       success: true,
